@@ -12,7 +12,6 @@ from OpenGL.GL import *
 from OpenGL.GLU import *
 from OpenGL.GL import shaders
 import numpy as np
-from PIL import Image
 
 """
 This handles setting the frame rate of the application.
@@ -48,10 +47,10 @@ Eventually for the Game of Life,
 def initShaders():
 	vsStr = """
 	#version 120
-	attribute vec2 a_position;
+	attribute vec2 position;
 	void main()
 	{
-		gl_Position = vec4(a_position, 0, 1);
+		gl_Position = vec4(position, 0, 1);
 	}
 	"""
 	
@@ -88,10 +87,20 @@ def initShaders():
 	fs2Str = """
 	uniform sampler2D state;
 	uniform vec2 scale;
-
+	uniform vec4 alive;
+	uniform vec4 dead;
+	
 	void main()
 	{
-		gl_FragColor = texture2D(state, gl_FragCoord.xy / scale);
+		vec4 color = texture2D(state, gl_FragCoord.xy / scale);
+		if (color == vec4(1.0, 1.0, 1.0, 1.0))
+		{
+			gl_FragColor = alive;
+		}
+		else
+		{
+			gl_FragColor = dead;
+		}
 	}
 	"""
 	
@@ -123,6 +132,8 @@ def setShaderUniform(program, uName, uType, uData):
 		glUniform1i(loc, uData)
 	if uType == "vec2":
 		glUniform2f(loc, *uData)
+	if uType == "vec4":
+		glUniform4f(loc, *uData)
 	
 """
 Wrapper for creating a texture in OpenGL.
@@ -184,7 +195,7 @@ def step():
 	glViewport(0, 0, simWidth, simHeight)
 	glBindTexture(GL_TEXTURE_2D, front)
 	glUseProgram(program1)
-	setShaderAttribute(program1, "a_position", "vec2", vbo)
+	setShaderAttribute(program1, "position", "vec2", vbo)
 	setShaderUniform(program1, "state", "sampler2D", 0)
 	setShaderUniform(program1, "scale", "vec2", (simWidth, simHeight))
 	drawFullscreenQuad()
@@ -195,20 +206,24 @@ def step():
 Renders the simulation to the screen for the user to see!
 """
 def draw():
-	global width, height, program2
+	global width, height, program2, alive, dead
 	glBindFramebuffer(GL_FRAMEBUFFER, 0)
 	glViewport(0, 0, width, height)
 	glBindTexture(GL_TEXTURE_2D, front)
 	glUseProgram(program2)
-	setShaderAttribute(program2, "a_position", "vec2", vbo)
-	setShaderUniform(program1, "state", "sampler2D", 0)
-	setShaderUniform(program1, "scale", "vec2", (width, height))
+	setShaderAttribute(program2, "position", "vec2", vbo)
+	setShaderUniform(program2, "state", "sampler2D", 0)
+	setShaderUniform(program2, "scale", "vec2", (width, height))
+	setShaderUniform(program2, "alive", "vec4", alive)
+	setShaderUniform(program2, "dead", "vec4", dead)
 	drawFullscreenQuad()
 	glUseProgram(0)
 
 """
 Initialized the front texture with a bunch of random values.
 This sets up the starting state of the simulation.
+Note that the alive and dead colors are the colors for the simulation.
+Those colors are not ever displayed on the screen!
 """
 def randomize():
 	global front, simWidth, simHeight
@@ -235,14 +250,16 @@ def fillScreen():
 if __name__ == "__main__":
 	width = 800
 	height = 600
-	simWidth = 800
-	simHeight = 600
+	simWidth = 400
+	simHeight = 300
 	title = "Game of Life"
 	fps = 60
 	fpsDisplayCounter = 100
 	fpsDisplayDelay = 100
 	startTime = sdl2.timer.SDL_GetTicks()
 	currTime = startTime
+	alive = (222.0/255, 222.0/255, 222.0/255, 1.0)#alive color
+	dead = (29.0/255, 29.0/255, 29.0/255, 1.0)#dead color
 	
 	screen = sdl2.SDL_CreateWindow(title, sdl2.SDL_WINDOWPOS_UNDEFINED, sdl2.SDL_WINDOWPOS_UNDEFINED, width, height, sdl2.SDL_WINDOW_OPENGL)
 	fillScreen()
