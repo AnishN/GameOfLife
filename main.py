@@ -214,11 +214,8 @@ def randomize():
 	global front, simWidth, simHeight
 	alive = (255, 255, 255, 255)
 	dead = (0, 0, 0, 0)
-	initialState = np.random.randint(2, size=simWidth*simHeight*4)
-	initialColors = []
-	for i in initialState:
-		if i == 0: initialColors.extend(dead)
-		else: initialColors.extend(alive)
+	initialState = np.random.randint(2, size=simWidth*simHeight)
+	initialColors = [alive if i == 1 else dead for i in initialState]
 	initialColors = np.array(initialColors, dtype=np.uint8)
 	glBindTexture(GL_TEXTURE_2D, front)
 	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, simWidth, simHeight, 0, GL_RGBA, GL_UNSIGNED_BYTE, initialColors)
