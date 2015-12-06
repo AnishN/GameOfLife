@@ -51,29 +51,63 @@ def initShaders():
 	attribute vec2 a_position;
 	void main()
 	{
-		gl_Position = gl_ProjectionMatrix * gl_ModelViewMatrix * vec4(a_position, 0, 1);
+		gl_Position = vec4(a_position, 0, 1);
 	}
 	"""
-	fsStr = """
+	
+	fs1Str = """
 	#version 120
+	uniform sampler2D state;
+	uniform vec2 scale;
+
+	int get(vec2 offset) {
+		return int(texture2D(state, (gl_FragCoord.xy + offset) / scale).r);
+	}
+
+	void main() {
+		int sum =
+			get(vec2(-1.0, -1.0)) +
+			get(vec2(-1.0,  0.0)) +
+			get(vec2(-1.0,  1.0)) +
+			get(vec2( 0.0, -1.0)) +
+			get(vec2( 0.0,  1.0)) +
+			get(vec2( 1.0, -1.0)) +
+			get(vec2( 1.0,  0.0)) +
+			get(vec2( 1.0,  1.0));
+		if (sum == 3) {
+			gl_FragColor = vec4(1.0, 1.0, 1.0, 1.0);
+		} else if (sum == 2) {
+			float current = float(get(vec2(0.0, 0.0)));
+			gl_FragColor = vec4(current, current, current, 1.0);
+		} else {
+			gl_FragColor = vec4(0.0, 0.0, 0.0, 1.0);
+		}
+	}
+	"""
+	
+	fs2Str = """
+	uniform sampler2D state;
+	uniform vec2 scale;
+
 	void main()
 	{
-		vec4 color = vec4(1.0, 0.0, 0.0, 1.0);
-		gl_FragColor = color;
+		gl_FragColor = texture2D(state, gl_FragCoord.xy / scale);
 	}
 	"""
 	
 	vs = shaders.compileShader(vsStr, GL_VERTEX_SHADER)
-	fs = shaders.compileShader(fsStr, GL_FRAGMENT_SHADER)
-	program = shaders.compileProgram(vs, fs)
-	out = (vs, fs, program)
+	fs1 = shaders.compileShader(fs1Str, GL_FRAGMENT_SHADER)
+	fs2 = shaders.compileShader(fs2Str, GL_FRAGMENT_SHADER)
+	
+	program1 = shaders.compileProgram(vs, fs1)
+	program2 = shaders.compileProgram(vs, fs2)
+	out = (program1, program2)
 	return out
 
 """
 Wrapper for setting attributes for my Game of Life shader.
 """
-def setShaderAttribute(aName, aType, aData):
-	global program
+def setShaderAttribute(program, aName, aType, aData):
 	loc = glGetAttribLocation(program, aName)
 	glEnableVertexAttribArray(loc)
 	glBindBuffer(GL_ARRAY_BUFFER, aData)
@@ -81,14 +115,131 @@ def setShaderAttribute(aName, aType, aData):
 		glVertexAttribPointer(loc, 2, GL_FLOAT, False, 0, None)
 
 """
-Wrapper for setting uniforms for my Game of Life shader.
+Wrapper for setting uniforms for my simulation shader.
 """	
-def setShaderUniform(uName, uType, uData):
-	global program
+def setShaderUniform(program, uName, uType, uData):
+	loc = glGetUniformLocation(program, uName)
+	if uType == "sampler2D":
+		glUniform1i(loc, uData)
+	if uType == "vec2":
+		glUniform2f(loc, *uData)
+	
+"""
+Wrapper for creating a texture in OpenGL.
+Used for the front and back texture for the simuation.
+Repeat makes the simulation wrap around.
+Nearest disables interpolation of the cells.
+Note that width and height are NOT window dimensions, but simulation dimensions.
+"""
+def createTexture(width, height):
+	tex = glGenTextures(1)
+	glBindTexture(GL_TEXTURE_2D, tex)
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT)
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT)
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST)
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST)
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, None)
+	return tex
+
+"""
+Wrapper for creating the rectangle that covers the entire screen.
+The simluation is rendered as a texture onto this quad.
+"""
+def createFullscreenQuad():
+	quad = np.array([-1, -1, 1, -1, -1, 1, 1, 1, 1, -1, -1, 1], dtype='float32')
+	vbo = glGenBuffers(1)
+	glBindBuffer(GL_ARRAY_BUFFER, vbo)
+	glBufferData(GL_ARRAY_BUFFER, len(quad)*4, quad, GL_STATIC_DRAW)
+	glBindBuffer(GL_ARRAY_BUFFER, 0)
+	return vbo
+
+"""
+Draws the fullscreen quad that renders the simulation.
+The division by eight is due to 4 bytes/float and 2 floats/vertex (2D).
+"""
+def drawFullscreenQuad():
+	global vbo
+	glBindBuffer(GL_ARRAY_BUFFER, vbo)
+	vboSize = glGetBufferParameteriv(GL_ARRAY_BUFFER, GL_BUFFER_SIZE)
+	numVertices = vboSize/8
+	glBindBuffer(GL_ARRAY_BUFFER, 0)
+	glDrawArrays(GL_TRIANGLES, 0, numVertices)
+
+"""
+Swaps the front and back textures in the simulation.
+"""
+def swapTextures():
+	global front, back
+	temp = front
+	front = back
+	back = temp
+
+"""
+Advances the simulation to the next generation (next step).
+"""
+def step():
+	global fbo, back, front, program1, simWidth, simHeight
+	glBindFramebuffer(GL_FRAMEBUFFER, fbo)
+	glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, back, 0)
+	glViewport(0, 0, simWidth, simHeight)
+	glBindTexture(GL_TEXTURE_2D, front)
+	glUseProgram(program1)
+	setShaderAttribute(program1, "a_position", "vec2", vbo)
+	setShaderUniform(program1, "state", "sampler2D", 0)
+	setShaderUniform(program1, "scale", "vec2", (simWidth, simHeight))
+	drawFullscreenQuad()
+	swapTextures()
+	glUseProgram(0)
+
+"""
+Renders the simulation to the screen for the user to see!
+"""
+def draw():
+	global width, height, program2
+	glBindFramebuffer(GL_FRAMEBUFFER, 0)
+	glViewport(0, 0, width, height)
+	glBindTexture(GL_TEXTURE_2D, front)
+	glUseProgram(program2)
+	setShaderAttribute(program2, "a_position", "vec2", vbo)
+	setShaderUniform(program1, "state", "sampler2D", 0)
+	setShaderUniform(program1, "scale", "vec2", (width, height))
+	drawFullscreenQuad()
+	glUseProgram(0)
+
+"""
+Initialized the front texture with a bunch of random values.
+This sets up the starting state of the simulation.
+"""
+def randomize():
+	global front, simWidth, simHeight
+	alive = (255, 255, 255, 255)
+	dead = (0, 0, 0, 0)
+	initialState = np.random.randint(2, size=simWidth*simHeight*4)
+	initialColors = []
+	for i in initialState:
+		if i == 0: initialColors.extend(dead)
+		else: initialColors.extend(alive)
+	initialColors = np.array(initialColors, dtype=np.uint8)
+	glBindTexture(GL_TEXTURE_2D, front)
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, simWidth, simHeight, 0, GL_RGBA, GL_UNSIGNED_BYTE, initialColors)
+	glBindTexture(GL_TEXTURE_2D, 0)
+
+"""
+Fills the screen with blackness before the randomization algorithm is complete.
+Otherwise, the window was transparent upon initialization.
+"""
+def fillScreen():
+	global screen
+	renderer = sdl2.SDL_CreateRenderer(screen, -1, 0)
+	sdl2.SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255)
+	sdl2.SDL_RenderClear(renderer)
+	sdl2.SDL_RenderPresent(renderer)
 
 if __name__ == "__main__":
 	width = 800
 	height = 600
+	simWidth = 800
+	simHeight = 600
 	title = "Game of Life"
 	fps = 60
 	fpsDisplayCounter = 100
@@ -97,18 +248,21 @@ if __name__ == "__main__":
 	currTime = startTime
 	
 	screen = sdl2.SDL_CreateWindow(title, sdl2.SDL_WINDOWPOS_UNDEFINED, sdl2.SDL_WINDOWPOS_UNDEFINED, width, height, sdl2.SDL_WINDOW_OPENGL)
+	fillScreen()
+	
 	video.SDL_GL_SetAttribute(video.SDL_GL_CONTEXT_MAJOR_VERSION, 2)
 	video.SDL_GL_SetAttribute(video.SDL_GL_CONTEXT_MINOR_VERSION, 1)
 	video.SDL_GL_SetAttribute(video.SDL_GL_CONTEXT_PROFILE_MASK, video.SDL_GL_CONTEXT_PROFILE_CORE)
 	context = sdl2.SDL_GL_CreateContext(screen)
 	initGL()
-	vs, fs, program = initShaders()
+	program1, program2 = initShaders()
 	
-	tri = np.array([-1, -1, 0, 1, 1, -1], dtype='float32')
-	vbo = glGenBuffers(1)
-	glBindBuffer(GL_ARRAY_BUFFER, vbo)
-	glBufferData(GL_ARRAY_BUFFER, len(tri)*4, tri, GL_STATIC_DRAW)
-	glBindBuffer(GL_ARRAY_BUFFER, 0)
+	vbo = createFullscreenQuad()
+	front = createTexture(simWidth, simHeight)
+	back = createTexture(simWidth, simHeight)
+	fbo = glGenFramebuffers(1)
+	
+	randomize()
 	
 	while True:
 		events = sdl2.ext.get_events()
@@ -119,8 +273,6 @@ if __name__ == "__main__":
 		
 		glViewport(0, 0, width, height)
 		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
-		glUseProgram(program)
-		setShaderAttribute("a_position", "vec2", vbo)
-		glDrawArrays(GL_TRIANGLES, 0, len(tri)*3)
-		glUseProgram(0)
+		step()
+		draw()
 		tick()
