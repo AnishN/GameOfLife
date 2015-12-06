@@ -241,17 +241,17 @@ Fills the screen with blackness before the randomization algorithm is complete.
 Otherwise, the window was transparent upon initialization.
 """
 def fillScreen():
-	global screen
+	global screen, dead
 	renderer = sdl2.SDL_CreateRenderer(screen, -1, 0)
-	sdl2.SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255)
+	sdl2.SDL_SetRenderDrawColor(renderer, *[int(d * 255) for d in dead])
 	sdl2.SDL_RenderClear(renderer)
 	sdl2.SDL_RenderPresent(renderer)
 
 if __name__ == "__main__":
 	width = 800
 	height = 600
-	simWidth = 400
-	simHeight = 300
+	simWidth = 800
+	simHeight = 600
 	title = "Game of Life"
 	fps = 60
 	fpsDisplayCounter = 100
@@ -259,7 +259,7 @@ if __name__ == "__main__":
 	startTime = sdl2.timer.SDL_GetTicks()
 	currTime = startTime
 	alive = (222.0/255, 222.0/255, 222.0/255, 1.0)#alive color
-	dead = (29.0/255, 29.0/255, 29.0/255, 1.0)#dead color
+	dead = (45.0/255, 45.0/255, 45.0/255, 1.0)#dead color
 	
 	screen = sdl2.SDL_CreateWindow(title, sdl2.SDL_WINDOWPOS_UNDEFINED, sdl2.SDL_WINDOWPOS_UNDEFINED, width, height, sdl2.SDL_WINDOW_OPENGL)
 	fillScreen()
