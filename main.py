@@ -13,6 +13,24 @@ from OpenGL.GLU import *
 import numpy as np
 from PIL import Image
 
+"""
+This handles setting the frame rate of the application.
+Naively always waits 1/fps-th of a second for each tick.
+Assumes no intensive work is done between frames.
+"""
+def tick():
+	global currTime, screen, title, fpsDisplayCounter, fpsDisplayDelay
+	prevTime = currTime
+	currTime = sdl2.timer.SDL_GetTicks()
+	diff = currTime - prevTime
+	frameRate = min(fps, 1000/diff) if diff != 0 else fps
+	sdl2.SDL_GL_SwapWindow(screen)
+	sdl2.SDL_Delay(1000/fps)
+	fpsDisplayCounter += diff
+	if fpsDisplayCounter >= fpsDisplayDelay:
+		sdl2.SDL_SetWindowTitle(screen, title + ": " + str(frameRate))
+		fpsDisplayCounter = 0
+
 if __name__ == "__main__":
 	width = 800
 	height = 600
@@ -25,6 +43,12 @@ if __name__ == "__main__":
 	context = sdl2.SDL_GL_CreateContext(screen)
 	startTime = sdl2.timer.SDL_GetTicks()
 	currTime = startTime
+	fpsDisplayCounter = 100
+	fpsDisplayDelay = 100
+	
+	glClearColor(0.0, 0.0, 0.0, 1.0)
+	glClearDepth(1.0)
+	glEnable(GL_TEXTURE_2D)
 	
 	while True:
 		events = sdl2.ext.get_events()
@@ -32,14 +56,7 @@ if __name__ == "__main__":
 			if event.type == sdl2.SDL_QUIT:
 				sdl2.ext.quit()
 				sys.exit()
-				
-		prevTime = currTime
-		currTime = sdl2.timer.SDL_GetTicks()
-		diff = currTime - prevTime
-		frameRate = min(fps, 1000/diff) if diff != 0 else fps
 		
-		sdl2.SDL_GL_SwapWindow(screen)
-		sdl2.SDL_Delay(1000/fps)
-		print frameRate
-		
-
+		glViewport(0, 0, width, height)
+		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
+		tick()
