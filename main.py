@@ -10,6 +10,7 @@ import sdl2.ext
 from sdl2 import video
 from OpenGL.GL import *
 from OpenGL.GLU import *
+from OpenGL.GL import shaders
 import numpy as np
 from PIL import Image
 
@@ -31,24 +32,83 @@ def tick():
 		sdl2.SDL_SetWindowTitle(screen, title + ": " + str(frameRate))
 		fpsDisplayCounter = 0
 
+"""
+This sets the initial OpenGL rules for handling display.
+Nothing too complex here as we only work in 2d.
+"""
+def initGL():
+	glClearColor(0.0, 0.0, 0.0, 1.0)
+	glClearDepth(1.0)
+	glEnable(GL_TEXTURE_2D)
+
+"""
+This compiles the vertex and fragment shader strings into an OpenGL program.
+Eventually for the Game of Life, 
+"""
+def initShaders():
+	vsStr = """
+	#version 120
+	attribute vec2 a_position;
+	void main()
+	{
+		gl_Position = gl_ProjectionMatrix * gl_ModelViewMatrix * vec4(a_position, 0, 1);
+	}
+	"""
+	fsStr = """
+	#version 120
+	void main()
+	{
+		vec4 color = vec4(1.0, 0.0, 0.0, 1.0);
+		gl_FragColor = color;
+	}
+	"""
+	
+	vs = shaders.compileShader(vsStr, GL_VERTEX_SHADER)
+	fs = shaders.compileShader(fsStr, GL_FRAGMENT_SHADER)
+	program = shaders.compileProgram(vs, fs)
+	out = (vs, fs, program)
+	return out
+
+"""
+Wrapper for setting attributes for my Game of Life shader.
+"""
+def setShaderAttribute(aName, aType, aData):
+	global program
+	loc = glGetAttribLocation(program, aName)
+	glEnableVertexAttribArray(loc)
+	glBindBuffer(GL_ARRAY_BUFFER, aData)
+	if aType == "vec2": 
+		glVertexAttribPointer(loc, 2, GL_FLOAT, False, 0, None)
+
+"""
+Wrapper for setting uniforms for my Game of Life shader.
+"""	
+def setShaderUniform(uName, uType, uData):
+	global program
+
 if __name__ == "__main__":
 	width = 800
 	height = 600
 	title = "Game of Life"
 	fps = 60
+	fpsDisplayCounter = 100
+	fpsDisplayDelay = 100
+	startTime = sdl2.timer.SDL_GetTicks()
+	currTime = startTime
+	
 	screen = sdl2.SDL_CreateWindow(title, sdl2.SDL_WINDOWPOS_UNDEFINED, sdl2.SDL_WINDOWPOS_UNDEFINED, width, height, sdl2.SDL_WINDOW_OPENGL)
 	video.SDL_GL_SetAttribute(video.SDL_GL_CONTEXT_MAJOR_VERSION, 2)
 	video.SDL_GL_SetAttribute(video.SDL_GL_CONTEXT_MINOR_VERSION, 1)
 	video.SDL_GL_SetAttribute(video.SDL_GL_CONTEXT_PROFILE_MASK, video.SDL_GL_CONTEXT_PROFILE_CORE)
 	context = sdl2.SDL_GL_CreateContext(screen)
-	startTime = sdl2.timer.SDL_GetTicks()
-	currTime = startTime
-	fpsDisplayCounter = 100
-	fpsDisplayDelay = 100
+	initGL()
+	vs, fs, program = initShaders()
 	
-	glClearColor(0.0, 0.0, 0.0, 1.0)
-	glClearDepth(1.0)
-	glEnable(GL_TEXTURE_2D)
+	tri = np.array([-1, -1, 0, 1, 1, -1], dtype='float32')
+	vbo = glGenBuffers(1)
+	glBindBuffer(GL_ARRAY_BUFFER, vbo)
+	glBufferData(GL_ARRAY_BUFFER, len(tri)*4, tri, GL_STATIC_DRAW)
+	glBindBuffer(GL_ARRAY_BUFFER, 0)
 	
 	while True:
 		events = sdl2.ext.get_events()
@@ -59,4 +119,8 @@ if __name__ == "__main__":
 		
 		glViewport(0, 0, width, height)
 		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
+		glUseProgram(program)
+		setShaderAttribute("a_position", "vec2", vbo)
+		glDrawArrays(GL_TRIANGLES, 0, len(tri)*3)
+		glUseProgram(0)
 		tick()
